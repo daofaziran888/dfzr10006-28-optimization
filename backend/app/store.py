@@ -14,6 +14,22 @@ class Store:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
+        # 辅助状态（分批计划、连接排空记录等）不参与模块列表和运营概览统计。
+        self._meta: dict[str, Any] = {}
+
+    def meta(self, key: str, default: Any = None) -> Any:
+        return self._meta.get(key, default)
+
+    def meta_list(self, key: str) -> list[Any]:
+        """读取并确保辅助状态里的列表已落库，避免对临时列表追加导致数据丢失。"""
+        items = self._meta.get(key)
+        if items is None:
+            items = []
+            self._meta[key] = items
+        return items
+
+    def set_meta(self, key: str, value: Any) -> None:
+        self._meta[key] = value
 
     def module_names(self) -> list[str]:
         return sorted(self._tables)

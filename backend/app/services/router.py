@@ -1,6 +1,7 @@
 """查询路由分发业务规则：状态流转、字段校验与筛选口径都收在这里。"""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from app.store import store
@@ -59,3 +60,42 @@ class RouterService:
         entry["pending"] = target != STATUS_ORDER[-1]
         entry["abnormal"] = action in NEGATIVE_ACTIONS
         return entry, f"路由规则已{action}"
+
+    def sync_gateway_switch(
+        self,
+        *,
+        gateway_name: str,
+        old_port: int | None,
+        new_port: int | None,
+        batch_id: str,
+        succeeded: bool,
+    ) -> list[dict[str, Any]]:
+        """把网关批次结果同步到查询路由分发：成功写新端口，回退保留旧端口。"""
+        matched = [
+            row
+            for row in store.rows(MODULE)
+            if str(row.get("目标服务")) == gateway_name
+        ]
+        if not matched:
+            return []
+
+        synced: list[dict[str, Any]] = []
+        for row in matched:
+            before = row.get("目标端口")
+            if succeeded:
+                row["目标端口"] = new_port
+            else:
+                row["目标端口"] = old_port if old_port is not None else before
+            row["网关同步状态"] = "已同步" if succeeded else "已回退"
+            row["同步批次"] = batch_id
+            row["同步时间"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            synced.append(
+                {
+                    "规则编号": row.get("规则编号"),
+                    "目标服务": row.get("目标服务"),
+                    "同步前端口": before,
+                    "同步后端口": row.get("目标端口"),
+                    "同步状态": row.get("网关同步状态"),
+                }
+            )
+        return synced
